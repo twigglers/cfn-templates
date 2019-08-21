@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Baseline template to create IAM permissions boundary with locked-down roles (including descendants roles created)
+
+Parameters:
+  IamRegion:
+    Description: Primary CloudFormation region for creation of IAM resources
+    Type: String
+    Default: "ap-southeast-2"
+
+  IdentityProvider:
+    Description: Identity Provider Name
+    Type: String
+
+Conditions:
+  IamRegion: !Equals [ !Ref IamRegion, !Ref "AWS::Region" ]
+
+Resources:
+  PermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: IamRegion
+    Properties:
+      ManagedPolicyName: PermissionsBoundary
+      Path: "/"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow all services and black list actions
+          # Alternatively, a conservative approach would be to whitelist specific services and whitelist/blacklist actions
+          - Effect: Allow
+            Action: "*"
+            Resource: "*"
+
+          # Prevent the creation of new roles without the permissons boundary (cannot self-reference, so policy name is hard-coded)
+          # Prevent the replacement of the permissions boundary after new roles have been created
+          - Effect: Deny
+            Action:
+              - iam:CreateRole
+              - iam:PutRolePermissionsBoundary
+            Resource: "*"
+            Condition:
+              "StringNotEquals":
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
+
+          # Prevent the remove of the permissions boundary on any role
+          - Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
+
+          # Deny modification of this policy (cannot self-reference, so policy name is hard-coded)
+          - Effect: Deny
+            Action:
+              - iam:CreatePolicy*
+              - iam:DeletePolicy*
+            Resource:
+              - !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
+
+          # Deny deletion of the permission bounded role
+          - Effect: Deny
+            Action:
+              - iam:CreateRole*
+              - iam:DeleteRole*
+            Resource:
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/PermissionBoundedRole
+
+          # Deny assuming to other roles
+          - Effect: Deny
+            Action:
+              - sts:AssumeRole
+            Resource: "*"
+
+          # Add additional boundaries to this role (managed policies limited to 6144 characters, use wildcards carefully)
+
+
+  PermissionBoundedRole:
+    Type: AWS::IAM::Role
+    DependsOn: PermissionsBoundary
+    Condition: IamRegion
+    Properties:
+      RoleName: PermissionBoundedRole
+      Path: "/"
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithSAML
+            Condition:
+              StringEquals:
+                "SAML:aud": "https://signin.aws.amazon.com/saml"
+              Bool:
+                "aws:MultiFactorAuthPresent": true
+            Principal:
+              Federated:
+                - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/${IdentityProvider}
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
