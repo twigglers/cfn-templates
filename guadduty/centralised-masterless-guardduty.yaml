@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "This template enables a multi-account deployment of GuardDuty logging to a central account without using the
+  in-built GuardDuty master and members constructs:
+    - The typical use case for the masterless model is to enable third-party tooling for data visualisation e.g. Splunk, Datadog
+    - Additional resources for ingestion may include a SQS queue subscribed to the centrail topic for processing
+    - CloudFormation supports Master and Member resources, but the root account email is required for the invitation
+    - The disadvantages of this model are:
+        - no centralised console for viewing all findings (console viewing of findings has to be done locally in each account)
+  "
+
+Parameters:
+  CentralSecurityAccountId:
+    Description: Account ID of where GuardDuty findings will be sent
+    Type: String
+
+  OrganizationId:
+    Description: ID of central AWS Organization
+    Type: String
+
+  AlertingEmail:
+    Description: Email that findings will be sent to
+    Type: String
+
+Conditions:
+  IsCentalSecurityAccount: !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ]
+  NotCentalSecurityAccount: !Not [ !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ] ]
+
+Resources:
+
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: true
+
+  # -------------------------
+  # Central security account
+  # -------------------------
+  CentralEventBusPolicy:
+    Condition: IsCentalSecurityAccount
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+        Action: "events:PutEvents"
+        Condition:
+            Type: "StringEquals"
+            Key: "aws:PrincipalOrgID"
+            Value: !Ref OrganizationId
+        Principal: "*"
+        StatementId: "AllowOrganizationAccounts"
+
+  CentralGuardDutyTopic:
+    Condition: IsCentalSecurityAccount
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: "guardduty-findings"
+
+  CentralGuardDutyTopicPolicy:
+    Condition: IsCentalSecurityAccount
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref CentralGuardDutyTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AllowPublish"
+            Action: "sns:Publish"
+            Effect: "Allow"
+            Principal: { Service: "events.amazonaws.com" }
+            Resource: !Ref CentralGuardDutyTopic
+
+  CentralGuardDutyTopicSubscription:
+    Condition: IsCentalSecurityAccount
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref AlertingEmail
+      Protocol: "email"
+      TopicArn: !Ref CentralGuardDutyTopic
+
+  CentralGuardDutyFindingsEventRule:
+    Condition: IsCentalSecurityAccount
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "GuardDuty findings event rule SNS topic"
+      EventPattern:
+        source: [ "aws.guardduty" ]
+        detail-type: [ "GuardDuty Finding" ]
+      State: ENABLED
+      Targets:
+        - Arn: !Ref CentralGuardDutyTopic
+          Id: "All-Findings"
+
+  # -------------------------
+  # Member accounts
+  # -------------------------
+  MemberPutEventRole:
+    Condition: NotCentalSecurityAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: "sts:AssumeRole"
+            Effect: "Allow"
+            Principal: { Service: "events.amazonaws.com" }
+      Policies:
+        - PolicyName: "AllowMemberPutEvents"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action: "events:PutEvents"
+                Effect: "Allow"
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${CentralSecurityAccountId}:event-bus/default"
+
+  MemberGuardDutyFindingsEventRule:
+    Condition: NotCentalSecurityAccount
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "GuardDuty findings event rule to central account"
+      EventPattern:
+        source: [ "aws.guardduty" ]
+        detail-type: [ "GuardDuty Finding" ]
+      State: ENABLED
+      Targets:
+        - Arn: !Sub "arn:aws:events:${AWS::Region}:${CentralSecurityAccountId}:event-bus/default"
+          Id: "Member-Findings"
+          RoleArn: !GetAtt MemberPutEventRole.Arn

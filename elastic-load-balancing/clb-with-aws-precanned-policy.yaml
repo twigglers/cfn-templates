@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Classic Load Balancer configuration for pre-canned AWS Cipher security policies:
+  This example creates a classic load balancer that leverages the pre-canned AWS security policies for
+  load balancers. By the ELBSecurityPolicy-2016-08 policy is used and the listener configuration does
+  not allow the use of other AWS pre-canned policies eg. the following configuration does not work:
+
+      Listeners:
+        - InstancePort: 80
+          InstanceProtocol: HTTP
+          LoadBalancerPort: 443
+          PolicyNames:
+            - ELBSecurityPolicy-TLS-1-2-2017-01
+          Protocol: HTTPS
+          SSLCertificateId: !Ref LoadBalancerCertificateArn
+
+  The appropriate configuration to use the ELBSecurityPolicy-TLS-1-2-2017-01 policy is shown below."
+
+Parameters:
+  LoadBalancerCertificateArn:
+    Description: ARN of certificate uploaded into ACM or IAM
+    Type: String
+
+Resources:
+  # --------------------------
+  # VPC
+  # --------------------------
+  DemoVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+
+  DhcpOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainNameServers:
+        - AmazonProvidedDNS
+
+  DhcpOptionsVpcAssociation:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      DhcpOptionsId: !Ref DhcpOptions
+      VpcId: !Ref DemoVPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: {}
+
+
+  # --------------------------
+  # Public Subnets
+  # --------------------------
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref DemoVPC
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref DemoVPC
+
+  PublicSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DemoVPC
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  PublicSubnetIgwRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicSubnetRouteTable
+
+
+  # --------------------------
+  # Private Subnets
+  # --------------------------
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: { "Fn::Select": [ 0, "Fn::GetAZs": "" ] }
+      CidrBlock: 10.100.0.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref DemoVPC
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: { "Fn::Select": [ 1, "Fn::GetAZs": "" ] }
+      CidrBlock: 10.100.1.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref DemoVPC
+
+  PrivateSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DemoVPC
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateSubnetRouteTable
+      SubnetId: !Ref PrivateSubnetA
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateSubnetRouteTable
+      SubnetId: !Ref PrivateSubnetB
+
+
+  # --------------------------
+  # Classic Load Balancer
+  # --------------------------
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for load balancer
+      GroupName: LoadBalancerSecurityGroup
+      SecurityGroupIngress:
+        -
+          IpProtocol: "tcp"
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+      VpcId: !Ref DemoVPC
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      ConnectionSettings:
+        IdleTimeout: 3600
+      CrossZone: true
+      HealthCheck:
+        HealthyThreshold: "2"
+        Interval: "60"
+        Target: "TCP:22"
+        Timeout: "5"
+        UnhealthyThreshold: "2"
+      Listeners:
+        - InstancePort: "80"
+          InstanceProtocol: "HTTP"
+          LoadBalancerPort: "443"
+          PolicyNames:
+            - "TLS-1-2-2017-01"
+          Protocol: "HTTPS"
+          SSLCertificateId: !Ref LoadBalancerCertificateArn
+      Policies:
+        - Attributes:
+            - Name: Reference-Security-Policy
+              Value: ELBSecurityPolicy-TLS-1-2-2017-01
+          PolicyName: TLS-1-2-2017-01
+          PolicyType: SSLNegotiationPolicyType
+      Scheme: public
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB

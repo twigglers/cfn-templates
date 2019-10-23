@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: Baseline template to create IAM permissions boundary with locked-down roles (including descendants roles created)
+Description: "Baseline template to create IAM permissions boundary with locked-down roles (including descendants roles created)"
+
 
 Parameters:
   IamRegion:
@@ -23,7 +24,7 @@ Resources:
       ManagedPolicyName: PermissionsBoundary
       Path: "/"
       PolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           # Allow all services and black list actions
           # Alternatively, a conservative approach would be to whitelist specific services and whitelist/blacklist actions
