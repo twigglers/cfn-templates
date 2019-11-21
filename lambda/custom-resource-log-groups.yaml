@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Demonstration of the clean deletion of log groups of Lambda-backed custom resources
+
+#  This template demonstrates an interesting interaction between log groups and lambda-backed custom resources during
+#  stack deletion.
+#
+#  The key configuration is the DependsOn property within the CustomResource configuration. Without it, the following
+#  happens:
+#    A. Create stack, resources deployed in following order:
+#      1. LogGroup and LambdaExecutionRole simultaneously
+#      2. LambdaFunction
+#      3. CustomResource
+#    B. Delete stack, resources get deleted in the following order:
+#      1. LogGroup and CustomResource simultaneously
+#      2. LambdaFunction
+#      3. LambdaExecutionRole
+#
+#  This creates a scenario where the LogGroup resource gets deleted and the CustomResource on_delete event writes to the
+#  same log group name AFTER CloudFormation has deleted the log group (i.e. the lambda function creates a new log group
+#  that is not managed by CloudFormation and has no retention in days configuration.
+#
+#  With the DependsOn configuration:
+#    A. Create stack, resources deployed in following order:
+#      1. LogGroup and LambdaExecutionRole simultaneously
+#      2. LambdaFunction
+#      3. CustomResource
+#    B. Delete stack, resources get deleted in the following order:
+#      1. CustomResource
+#      2. LogGroup and LambdaFunction simultaneously
+#      3. LambdaExecutionRole
+#
+#  The CustomResource is deleted (and all events written to the log group) before the LogGroup resource is deleted.
+
+Parameters:
+  LambdaFunctionName:
+    Type: String
+    Default: TestFunction
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+      RetentionInDays: 7
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: '/'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Runtime: python3.7
+      Handler: index.handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          def handler(event, context):
+              print("Event: {}".format(json.dumps(event)))
+              responseData = {}
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+  CustomResource:
+    Type: Custom::Resource
+    DependsOn:
+      - LogGroup
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
