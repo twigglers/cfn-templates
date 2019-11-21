@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "Baseline template to create IAM permissions boundary with locked-down roles (including descendants roles created)"
-
+Description: Demonstration of IAM permissions boundary with locked-down roles (including descendants roles created)
 
 Parameters:
   IamRegion:

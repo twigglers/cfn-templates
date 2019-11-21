@@ -1,20 +1,21 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "Classic Load Balancer configuration for pre-canned AWS Cipher security policies:
-  This example creates a classic load balancer that leverages the pre-canned AWS security policies for
-  load balancers. By the ELBSecurityPolicy-2016-08 policy is used and the listener configuration does
-  not allow the use of other AWS pre-canned policies eg. the following configuration does not work:
+Description: Demonstration of Classic Load Balancer configuration for pre-canned AWS Cipher security policies
 
-      Listeners:
-        - InstancePort: 80
-          InstanceProtocol: HTTP
-          LoadBalancerPort: 443
-          PolicyNames:
-            - ELBSecurityPolicy-TLS-1-2-2017-01
-          Protocol: HTTPS
-          SSLCertificateId: !Ref LoadBalancerCertificateArn
-
-  The appropriate configuration to use the ELBSecurityPolicy-TLS-1-2-2017-01 policy is shown below."
+#  This example creates a classic load balancer that leverages the pre-canned AWS security policies for load balancers.
+#  By default, the ELBSecurityPolicy-2016-08 policy is used and the listener configuration does not allow the use of
+#  other AWS pre-canned policies eg. the following configuration does not work:
+#
+#    Listeners:
+#      - InstancePort: 80
+#        InstanceProtocol: HTTP
+#        LoadBalancerPort: 443
+#        PolicyNames:
+#          - ELBSecurityPolicy-TLS-1-2-2017-01
+#        Protocol: HTTPS
+#        SSLCertificateId: !Ref LoadBalancerCertificateArn
+#
+#  The appropriate configuration to use the ELBSecurityPolicy-TLS-1-2-2017-01 policy is shown below.
 
 Parameters:
   LoadBalancerCertificateArn:

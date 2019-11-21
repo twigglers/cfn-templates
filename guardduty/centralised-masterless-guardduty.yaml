@@ -1,13 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "This template enables a multi-account deployment of GuardDuty logging to a central account without using the
-  in-built GuardDuty master and members constructs:
-    - The typical use case for the masterless model is to enable third-party tooling for data visualisation e.g. Splunk, Datadog
-    - Additional resources for ingestion may include a SQS queue subscribed to the centrail topic for processing
-    - CloudFormation supports Master and Member resources, but the root account email is required for the invitation
-    - The disadvantages of this model are:
-        - no centralised console for viewing all findings (console viewing of findings has to be done locally in each account)
-  "
+Description: Demonstration of masterless GuardDuty configuration
+
+#  This template enables a multi-account deployment of GuardDuty logging to a central account without using the
+#  in-built GuardDuty master and members constructs:
+#    - The typical use case for the masterless model is to enable third-party tooling for data visualisation e.g.
+#      Splunk, Datadog
+#    - Additional resources for ingestion may include a SQS queue subscribed to the centrail topic for processing
+#    - CloudFormation supports Master and Member resources, but the root account email is required for the invitation
+#    - The disadvantages of this model are:
+#    - no centralised console for viewing all findings (console viewing of findings has to be done locally in each
+#      account)
 
 Parameters:
   CentralSecurityAccountId:
@@ -23,8 +26,8 @@ Parameters:
     Type: String
 
 Conditions:
-  IsCentalSecurityAccount: !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ]
-  NotCentalSecurityAccount: !Not [ !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ] ]
+  IsCentralSecurityAccount: !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ]
+  NotCentralSecurityAccount: !Not [ !Equals [ !Ref "AWS::AccountId", !Ref CentralSecurityAccountId ] ]
 
 Resources:
 
@@ -37,7 +40,7 @@ Resources:
   # Central security account
   # -------------------------
   CentralEventBusPolicy:
-    Condition: IsCentalSecurityAccount
+    Condition: IsCentralSecurityAccount
     Type: AWS::Events::EventBusPolicy
     Properties:
         Action: "events:PutEvents"
@@ -49,13 +52,13 @@ Resources:
         StatementId: "AllowOrganizationAccounts"
 
   CentralGuardDutyTopic:
-    Condition: IsCentalSecurityAccount
+    Condition: IsCentralSecurityAccount
     Type: AWS::SNS::Topic
     Properties:
       TopicName: "guardduty-findings"
 
   CentralGuardDutyTopicPolicy:
-    Condition: IsCentalSecurityAccount
+    Condition: IsCentralSecurityAccount
     Type: AWS::SNS::TopicPolicy
     Properties:
       Topics:
@@ -70,7 +73,7 @@ Resources:
             Resource: !Ref CentralGuardDutyTopic
 
   CentralGuardDutyTopicSubscription:
-    Condition: IsCentalSecurityAccount
+    Condition: IsCentralSecurityAccount
     Type: AWS::SNS::Subscription
     Properties:
       Endpoint: !Ref AlertingEmail
@@ -78,7 +81,7 @@ Resources:
       TopicArn: !Ref CentralGuardDutyTopic
 
   CentralGuardDutyFindingsEventRule:
-    Condition: IsCentalSecurityAccount
+    Condition: IsCentralSecurityAccount
     Type: AWS::Events::Rule
     Properties:
       Description: "GuardDuty findings event rule SNS topic"
@@ -94,7 +97,7 @@ Resources:
   # Member accounts
   # -------------------------
   MemberPutEventRole:
-    Condition: NotCentalSecurityAccount
+    Condition: NotCentralSecurityAccount
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -113,7 +116,7 @@ Resources:
                 Resource: !Sub "arn:aws:events:${AWS::Region}:${CentralSecurityAccountId}:event-bus/default"
 
   MemberGuardDutyFindingsEventRule:
-    Condition: NotCentalSecurityAccount
+    Condition: NotCentralSecurityAccount
     Type: AWS::Events::Rule
     Properties:
       Description: "GuardDuty findings event rule to central account"
