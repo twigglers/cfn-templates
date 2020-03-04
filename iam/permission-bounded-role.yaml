@@ -42,14 +42,11 @@ Resources:
               "StringNotEquals":
                 "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
 
-          # Prevent the remove of the permissions boundary on any role
+          # Prevent the remove of ANY permissions boundary on ANY role
           - Effect: Deny
             Action:
               - iam:DeleteRolePermissionsBoundary
             Resource: "*"
-            Condition:
-              StringEquals:
-                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/PermissionsBoundary
 
           # Deny modification of this policy (cannot self-reference, so policy name is hard-coded)
           - Effect: Deny
